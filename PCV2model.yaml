@@ -1,0 +1,864 @@
+---
+#  __  __           _      _
+# |  \/  |         | |    | |
+# | \  / | ___   __| | ___| |
+# | |\/| |/ _ \ / _` |/ _ \ |
+# | |  | | (_) | (_| |  __/ |
+# |_|  |_|\___/ \__,_|\___|_|
+#
+#  _____        __                           _   _
+# |_   _|      / _|                         | | (_)
+#   | |  _ __ | |_ ___  _ __ _ __ ___   __ _| |_ _  ___  _ __
+#   | | | '_ \|  _/ _ \| '__| '_ ` _ \ / _` | __| |/ _ \| '_ \
+#  _| |_| | | | || (_) | |  | | | | | | (_| | |_| | (_) | | | |
+# |_____|_| |_|_| \___/|_|  |_| |_| |_|\__,_|\__|_|\___/|_| |_|
+
+
+# NAME OF THE MODEL
+model_name: PCV2model
+
+# DESCRIPTION OF THE MODEL
+model_info:
+  abstract: ''
+  author: ''
+  TODO: ''
+
+#  _______ _
+# |__   __(_)
+#    | |   _ _ __ ___   ___
+#    | |  | | '_ ` _ \ / _ \
+#    | |  | | | | | | |  __/
+#    |_|  |_|_| |_| |_|\___|
+
+# TIME INFORMATION
+time_info:
+  time_unit: 'days'
+  delta_t: 1
+  total_duration: '210'
+
+#  _                    _
+# | |                  | |
+# | |     _____   _____| |___
+# | |    / _ \ \ / / _ \ / __|
+# | |___|  __/\ V /  __/ \__ \
+# |______\___| \_/ \___|_|___/
+
+# ORGANIZATION LEVELS USED IN THE SIMULATION
+# A compartment-based model considers two levels: the population level
+# (batch), which is simulated, and the individuals (pigs), which
+# stay virtual
+levels:
+  # name of the level (arbitrary name)
+  batch:
+    desc: 'level of the population'
+    aggregation_type: 'hybrid'
+    default_prototype: default_batch
+    contains:
+      - pigs
+    aggregate_vars:
+      - name: mean_adwg
+        collect: average_daily_weight_gain
+        operator: mean
+      - name: mean_weight
+        collect: weight
+        operator: mean
+      - name: mean_susceptibility
+        collect: susceptibility_P
+        operator: mean
+
+  pigs:
+    desc: 'level of individuals'
+    default_prototype: default_animal
+
+#   _____                       _
+#  / ____|                     (_)
+# | |  __ _ __ ___  _   _ _ __  _ _ __   __ _
+# | | |_ | '__/ _ \| | | | '_ \| | '_ \ / _` |
+# | |__| | | | (_) | |_| | |_) | | | | | (_| |
+#  \_____|_|  \___/ \__,_| .__/|_|_| |_|\__, |
+#                        | |             __/ |
+#                        |_|            |___/
+grouping:
+  batch:
+    age_and_lifecycle: [age_group, life_cycle]
+    infection_by_lifecycle: [PCV2, life_cycle]
+    infection_by_age: [PCV2, age_group]
+    vaccination_by_age: [age_group, vaccination_PCV2]
+    all: [PCV2, age_group, vaccination_PCV2, MDA, life_cycle]
+    vaccination_PCV2_by: [MDA, vaccination_PCV2]
+    maternal_immunity: [MDA]
+
+#  _____
+# |  __ \
+# | |__) | __ ___   ___ ___  ___ ___  ___  ___
+# |  ___/ '__/ _ \ / __/ _ \/ __/ __|/ _ \/ __|
+# | |   | | | (_) | (_|  __/\__ \__ \  __/\__ \
+# |_|   |_|  \___/ \___\___||___/___/\___||___/
+
+# LIST OF PROCESSES (IN ORDER) TO BE EXECUTED DURING EACH TIME STEP
+processes:
+  pigs:
+    - MDA: maternal_immunity
+    - vaccination_PCV2: vaccination_PCV2_by
+    - PCV2: all
+    - life_cycle: age_and_lifecycle
+    - age_group: age_and_lifecycle
+
+
+
+#   _____ _        _         __  __            _     _
+#  / ____| |      | |       |  \/  |          | |   (_)
+# | (___ | |_ __ _| |_ ___  | \  / | __ _  ___| |__  _ _ __   ___  ___
+#  \___ \| __/ _` | __/ _ \ | |\/| |/ _` |/ __| '_ \| | '_ \ / _ \/ __|
+#  ____) | || (_| | ||  __/ | |  | | (_| | (__| | | | | | | |  __/\__ \
+# |_____/ \__\__,_|\__\___| |_|  |_|\__,_|\___|_| |_|_|_| |_|\___||___/
+
+# DESCRIPTION OF THE STATE MACHINES INVOLVED IN THE MODEL
+# Each state machine is composed at least of several states.
+# The name of a state machine defines an individual variable which
+# contains the value of the current state in the individual.
+# Transitions define how each state can change to another one.
+# Productions define how individuals in one state can produce
+# new individuals in another state.
+state_machines:
+  #--------------------------------
+  # PCV2 INFECTION
+  #--------------------------------
+  PCV2:
+    desc: 'The state machine which defines the evolution of health states'
+    states:
+      - S:
+          name: 'Susceptible'
+          desc: 'suceptible of becoming infected'
+          fillcolor: 'limegreen'
+      - E:
+          name: 'Exposed'
+          desc: 'State for initializing animals that can eventually become infectious'
+          fillcolor: 'cyan'
+          duration: 'dur_E_PCV2'
+          on_enter:
+            - set_var: affected
+              value: 1
+      - PCV2SD:
+          name: 'PCV2SD'
+          desc: 'infected and able to transmit the disease'
+          fillcolor: 'firebrick'
+          duration: dur_PCV2SD
+          on_enter:
+            - set_var: affected_SD
+              value: 1
+            - record_change: cum_incidence_SD
+      - PCV2SI:
+          name: 'PCV2SI'
+          desc: 'subclinically infected'
+          fillcolor: 'pink'
+          duration: dur_PCV2SI
+          on_enter:
+            - set_var: affected_SI
+              value: 1
+            - record_change: cum_incidence_SI 
+      - R:
+          name: 'Recovered'
+          desc: 'healthy again'
+          fillcolor: 'deepskyblue'
+      - D_PCV2SD:
+          name: 'Deceased_by_PCV2SD'
+          desc: 'deceased individuals'
+          fillcolor: 'white'
+          autoremove: yes
+          on_enter:
+            - record_change: cum_dead_SD
+
+    transitions:
+      - from: S
+        to: E
+        rate: 'force_of_infection_P * susceptibility_P'
+        desc: 'infection of susceptible animals by infectious animals, according to the force of infection'
+      - from: E
+        to: PCV2SD
+        proba: 'p_infection_PCV2SD'
+        desc: 'a proportion of infected piglets and pigs develop the systemic disease after duration dur_E_PCV2'
+      - from: E
+        to: PCV2SI
+        proba: '1 - p_infection_PCV2SD'
+        desc: 'the other infected piglets and pigs develop the subclinical infection after duration dur_E_PCV2'
+      - from: PCV2SD
+        to: R
+        rate: 'recovery_PCV2SD'
+        desc: 'recovery of PCV2SD infectious individuals, which become recovered at the specified recovery rate'
+      - from: PCV2SI
+        to: R
+        rate: 'recovery_PCV2SI'
+        desc: 'recovery of PCV2SI individuals, which become recovered at the specified recovery rate'
+      - from: PCV2SD
+        to: D_PCV2SD
+        rate: 'lethality_PCV2SD'
+        escape: yes
+        desc: 'additional mortality induced by systemic disease'
+      - from: R
+        to: S
+        desc: 'immunity waning'
+        rate: immunity_waning_rate
+
+  #--------------------------------
+  # LIFE CYCLE
+  #--------------------------------
+  life_cycle:
+    desc: 'state machine representing the evolution of animals in the different production steps'
+    states:
+      - Suckling:
+          name: 'suckling'
+          desc: 'piglets during suckling'
+          fillcolor: 'deeppink'
+          default: yes
+          duration: 'dur_piglets'
+          on_stay:
+            - set_var: weight
+              value: 'weight + average_daily_weight_gain'
+      - Nursery:
+          name: 'Nursery'
+          desc: 'pigs entering the nursery stage'
+          fillcolor: 'brown'
+          duration: 'dur_nursery'
+          on_enter:
+            - become: pig
+          on_stay:
+            - set_var: weight
+              value: 'weight + average_daily_weight_gain'
+      - Finishing:
+          name: 'Finishing'
+          desc: 'pigs entering the finishing stage'
+          fillcolor: 'brown'
+          duration: 'dur_finishing'
+          on_stay:
+            - set_var: weight
+              value: 'weight + average_daily_weight_gain'
+      - Slaughter:
+          name: 'Slaughter'
+          desc: 'animals sent to the slaughterhouse after the finishing period'
+          fillcolor: 'gray'
+          autoremove: no
+
+    transitions:
+      # PIGLETS/PIGS LIFE CYCLE
+      - from: Suckling
+        to: Nursery
+        proba: 1
+        desc: 'maturation of suckling piglets into nursery pigs'
+      - from: Nursery
+        to: Finishing
+        proba: 1
+        desc: 'maturation of nursery pigs into finishing pigs'
+      - from: Finishing
+        to: Slaughter
+        proba: 1
+
+  #--------------------------------
+  # AGE GROUP INFORMATION
+  #--------------------------------
+  age_group:
+    desc: 'the state machine representing the demographic process'
+    states:
+      - Piglet:
+          name: 'Piglets'
+          desc: 'juvenile individuals, specifically suckling piglets'
+          fillcolor: 'deeppink'
+          default: yes
+      - Pig:
+          name: 'Pigs'
+          desc: 'adult individuals, encompassing nursery and finishing piglets'
+          fillcolor: 'brown'
+      - Dead:
+          name: 'Deceased'
+          desc: 'deceased individuals based on natural mortality (individuals in this state are removed automatically)'
+          fillcolor: 'white'
+          autoremove: yes
+          on_enter:
+            - record_change: cum_dead
+
+    transitions:
+      - from: Piglet
+        to: Dead
+        rate: mortality_piglets
+
+      - from: Pig
+        to: Dead
+        rate: mortality_pigs
+
+  #--------------------------------
+  # PCV2 VACCINATION INFORMATION
+  #--------------------------------
+  vaccination_PCV2:
+    desc: 'vaccination'
+    states:
+      - OOI:
+          name: 'onset_of_immunity'
+          desc: 'animals that received a vaccine but are not yet protected'
+          duration: delay_vaccine_efficacy
+      - IMM:
+          name: 'immunised'
+          desc: 'animals that are protected by the vaccine'
+          fillcolor: 'gray'
+          duration: 'dur_vaccination_PCV2 - delay_vaccine_efficacy'
+          on_enter:
+            - set_var: vaccinated
+              value: 1
+      - Non_IMM:
+          name: 'non_immunised'
+          desc: 'animals that are not protected by the vaccine'
+          fillcolor: 'red'
+    transitions:
+      - from: Non_IMM
+        to: OOI
+        cond: 'time_vac_Piglet'
+        proba: 'proba_success_vacc_Piglet'
+      - from: OOI
+        to: IMM
+        proba: 1
+      - from: IMM
+        to: Non_IMM
+        # rate: vacc_waning
+        proba: 1
+        on_cross:
+          - set_var: piglet_mda_value
+            value: 0
+
+  #--------------------------------
+  # MATERNAL DERIVED ANTIBODIES
+  #--------------------------------
+  MDA:
+    desc: 'maternal derived antibodies level'
+    states: 
+      - VH_MDA:
+          name: 'very_high_MDA'
+          desc: 'very high MDA obtained by PCV2 ELISA'
+          fillcolor: 'red'
+          duration: dur_VH
+          # interval: more than 2.0
+
+      - H_MDA:
+          name: 'high_MDA'
+          desc: 'high MDA obtained by PCV2 ELISA'
+          fillcolor: 'orange'
+          duration: dur_H
+       # interval: 'from 1.0 to 2.0'
+      - M_MDA: 
+          name: 'medium_MDA'
+          desc: 'medium MDA obtained by PCV2 ELISA'
+          fillcolor: 'yellow'
+          duration: dur_M
+       # interval: 'from 0.5 to 0.99'
+      - L_MDA:
+          name: 'low_MDA'
+          desc: 'low MDA obtained by PCV2 ELISA'
+          fillcolor: 'green'
+      #  interval: less than 0.5
+    transitions:
+      - from: VH_MDA
+        to: H_MDA
+        proba: 1
+      - from: H_MDA
+        to: M_MDA
+        proba: 1
+      - from: M_MDA
+        to: L_MDA
+        proba: 1
+
+
+#  _____                               _
+# |  __ \                             | |
+# | |__) |_ _ _ __ __ _ _ __ ___   ___| |_ ___ _ __ ___
+# |  ___/ _` | '__/ _` | '_ ` _ \ / _ \ __/ _ \ '__/ __|
+# | |  | (_| | | | (_| | | | | | |  __/ ||  __/ |  \__ \
+# |_|   \__,_|_|  \__,_|_| |_| |_|\___|\__\___|_|  |___/
+
+# PARAMETERS/FUNCTIONS/EXPRESSIONS USED IN THE MODEL
+parameters:
+  #--------------------------------
+  # INITIAL PARAMETERS
+  #--------------------------------
+  initial_batch_size:
+    desc: 'initial number of pigs in the batch'
+    value: 1000
+  initial_prevalence_PCV2:
+    desc: 'initial proportion of infectious pigs in the batch'
+    value: 0.001
+
+  my_proportion:
+    desc: ''
+    value: 'DIV(total_my_PCV2_my_age_group_my_vaccination_PCV2_my_MDA_my_life_cycle, total_my_life_cycle)'
+  
+  #--------------------------------
+  # PCV2 INFECTION PARAMETERS
+  #--------------------------------
+
+  # ABOUT FORCE OF INFECTION AND TRANSMISSION
+  dur_E_PCV2:
+    desc: 'normal distribution of the durations in state E'
+    value: 'random_gamma(50, avg_dur_E_PCV2/50)'
+  avg_dur_E_PCV2:
+    desc: 'average duration of latent (E) state'
+    value: 21 
+  dur_PCV2SI:
+    desc: 'normal distribution of the duration in the subclinical infection'
+    value: 'random_gamma(50, avg_dur_PCV2SI/50)'
+  avg_dur_PCV2SI:
+    desc: 'average duration of the subclinical infection'
+    value: 60
+  dur_PCV2SD: 
+    desc: 'normal distribution of the duration in the systemic disease'
+    value: 'random_gamma(50, avg_dur_PCV2SD/50)'    
+  avg_dur_PCV2SD: 
+    desc: 'average duration of the systemic disease'
+    value: 60
+
+  susceptibility_P:
+    desc: 'susceptibility of piglets or pigs depending on their vaccination status and their level of MDA'
+    value: 'MIN(1, (1 - is_IMM - is_OOI) * susceptibility_if_unvacc + is_OOI * MIN(susceptibility_OOI_P, susceptibility_if_unvacc) + is_IMM * MIN(susceptibility_IMM_P, susceptibility_if_unvacc))'
+
+  susceptibility_OOI_P:
+    desc: 'susceptibility of being in OOI state'
+    value: 0.1 
+  
+  susceptibility_if_unvacc:
+    desc: 'susceptibility if it is not vaccinated'
+    value: 'MIN(1, is_L_MDA * 1 + is_M_MDA * susceptibility_M_MDA + is_H_MDA * susceptibility_H_MDA + is_VH_MDA * susceptibility_VH_MDA)'
+    
+  susceptibility_IMM_P:
+    desc: 'susceptibility factor of immunised piglets or pigs (1: full exposure to the force of infection, 0: full protection)'
+    value: 0.005
+  susceptibility_M_MDA:
+    desc: 'susceptibility factor of medium MDA-protected animals (1: full exposure to the force of infection, 0: full protection)'
+    value: 0.2
+  susceptibility_H_MDA:
+    desc: 'susceptibility factor of high MDA-protected animals (1: full exposure to the force of infection, 0: full protection)'
+    value: 0.1
+  susceptibility_VH_MDA:
+    desc: 'susceptibility factor of very high MDA-protected animals (1: full exposure to the force of infection, 0: full protection)'
+    value: 0.01
+
+  force_of_infection_P:
+    desc: 'infection function assuming frequency dependence, depending on age group'
+    value: 'is_Suckling * force_of_infection_Suckling + is_Nursery * force_of_infection_Nursery + is_Finishing * force_of_infection_Finishing'
+  force_of_infection_Suckling:
+    desc: 'force of infection experienced by suckling piglets'
+    value: 'DIV(transmission_PCV2SD * total_PCV2SD_Suckling + transmission_PCV2SI * total_PCV2SI_Suckling, total_Suckling)'
+  force_of_infection_Nursery:
+    desc: 'force of infection experienced by nursery pigs (assuming nursery pigs are separated from finishing pigs)'
+    value: 'DIV(transmission_PCV2SD * total_PCV2SD_Nursery + transmission_PCV2SI * total_PCV2SI_Nursery, total_Nursery) + PCV2_prevalence_nursery / mean_susceptibility'
+  force_of_infection_Finishing:
+    desc: 'force of infection experienced by Finishing pigs (assuming finishing pigs are separated from nursery pigs)'
+    value: 'DIV(transmission_PCV2SD * total_PCV2SD_Finishing + transmission_PCV2SI * total_PCV2SI_Finishing, total_Finishing)'
+
+  PCV2_prevalence_nursery:
+    desc: 'PCV2 prevalence at nursery-entry'
+    value: 'float(AND(Eq(time, 30), total_Nursery > 0)) * (-1 * log(1 - value_PCV2_prevalence_nursery) / delta_t)'
+
+  value_PCV2_prevalence_nursery:
+    desc: 'value of the PCV2 prevalence at nursery-entry'
+    value: 0.05
+
+  ## PERCENTAGE PREVALENCE VALUES
+  percentage_prevalence:
+    desc: 'proportion of infected+infectious piglets and pigs'
+    value: 'Piecewise((100 * DIV(total_PCV2SD + total_PCV2SI + total_E, total_batch), total_batch > 0), (0, True))'
+
+  percentage_prevalence_pigs:
+    desc: 'proportion of infected+infectious pigs'
+    value: 'DIV(100 * (total_PCV2SD_Pig + total_PCV2SI_Pig + total_E_Pig), total_Pig)'
+    
+  percentage_prevalence_piglets:
+    desc: 'proportion of infected+infectious piglets'
+    value: 'DIV(100 * (total_PCV2SD_Piglet + total_PCV2SI_Piglet + total_E_Piglet), total_Piglet)'
+
+  ## TRANSMISSION RATE VALUES
+  transmission_PCV2SD:
+    desc: 'transmission rate from PCV2SD infectious pigs (/day)'
+    value: 0.55
+  transmission_PCV2SI:
+    desc: 'transmission rate from PCV2SI infectious pigs (/day)'
+    value: 0.35
+
+  ## ABOUT INFECTION
+  base_p_infection_PCV2SD:
+    desc: 'proportion of piglets or pigs infected with PCV2 which develop the PCV2SD'
+    value: 0.1
+
+  p_infection_PCV2SD:
+    desc: "proportion of piglets or pigs infected with PCV2 which develop the PCV2SD"
+    value: 'base_p_infection_PCV2SD * (1 - is_IMM - is_OOI)'
+
+  ## ABOUT RECOVERY
+  recovery_PCV2SD:
+    desc: 'recovery rate (/day)'
+    value: 0.02
+  recovery_PCV2SI:
+    desc: 'recovery rate (/day)'
+    value: 0.015
+
+  ## IMMUNITY WANING
+  immunity_waning_rate:
+    desc: 'immunity waning rate (/day)'
+    value: '1/180'
+
+  #---------------------------------------------------------------
+  # ABOUT PIGLETS AND PIGS PHYSIOLOGICAL PARAMETERS
+  #---------------------------------------------------------------
+  ## ABOUT MORTALITY
+  base_mortality_suckling:
+    desc: 'mortality percentage experienced by piglets over the whole period'
+    value: 0.244
+  mortality_piglets:
+    desc: 'mortality rate experienced by piglets daily'
+    value: 'base_mortality_suckling / dur_piglets'
+  base_mortality_nursery:
+    desc: 'mortality percentage experienced by pigs during nursery over the whole period'
+    value: 0.068
+  base_mortality_finishing:
+    desc: 'mortality percentage experienced by pigs during finishing over the whole period'
+    value: 0.059
+  mortality_pigs:
+    desc: 'mortality rate experienced by pigs daily depending on their life cycle'
+    value: 'is_Nursery * (base_mortality_nursery / dur_nursery) +
+            is_Finishing * (base_mortality_finishing / dur_finishing)'
+
+  lethality_PCV2SD:
+    desc: 'mortality rate for PCV2SD in piglets and pigs'
+    value: 0.0467 # death rate to achieve 70% mortality when recovery rate is 0.02
+
+  ## PIGLETS
+  dur_piglets:
+    desc: 'duration of suckling piglets before becoming nursery pigs'
+    value: 28
+  
+  ## PIGS
+  dur_nursery:
+    desc: 'duration of the nursery period for pigs'
+    value: 42
+  dur_finishing:
+    desc: 'duration of the finishing period for pigs'
+    value: 141
+   
+  #--------------------------------
+  # PCV2 VACCINATION PARAMETERS
+  #--------------------------------
+  delay_vaccine_efficacy:
+    desc: 'delay before vaccinated animals are fully protected'
+    value: 14
+  dur_vaccination_PCV2: 
+    desc: 'duration of the immunity conferred by the vaccination as stated by the manufacturer - effective duration is lower, considering delay_vaccine_efficacy (TODO: search for interval ??)'
+    value: 200 # PROTECTION UNTIL THE END OF THE FINISHING PERIOD
+  vacc_age_piglets:
+    desc: 'age at which piglets are being vaccinated (days)'
+    value: 21
+  vacc_piglets:
+    desc: '1 if piglets are vaccinated at vacc_age_piglets, 0 if not'
+    value: 0
+  time_vac_Piglet:
+    desc: '1 if it is time to vaccinate suckling piglets'
+    value: 'vacc_piglets * float(Eq(age, vacc_age_piglets))'
+
+  proba_success_vacc_Piglet:
+    desc: 'probability that the vaccination of piglet is successful, depending on its MDA level'
+    value: 'default_proba_success_vacc * (1 - 0.5 * is_VH_MDA)'
+  default_proba_success_vacc:
+    desc: 'default probability that the vaccination is successful (accounting for manipulation errors, etc.)'
+    value: 0.95
+
+  #--------------------------------
+  # PCV2 MATERNAL IMMUNITY
+  #--------------------------------
+  mda_waning:
+    desc: 'rate at which MDA protection disappear. Calculated assuming an exponential decrease, starting at level 2.5 with a 0.2 decrease in 7 days'
+    value: 0.015
+  VH_max:
+    desc: 'max value for MDA in the "Very High" level'
+    value: 3.5
+  VH_threshold:
+    desc: 'MDA threshold above which animals are in the "Very High" level'
+    value: 2.0
+  H_threshold:
+    desc: 'MDA threshold above which animals are in the "High" level'
+    value: 1.0
+  M_threshold:
+    desc: 'MDA threshold above which animals are in the "Medium" level'
+    value: 0.5
+  dur_VH:
+    desc: 'duration in VH_MDA based on the MDA value if in corresponding MDA state, otherwise full state duration'
+    value: '(log(in_VH * mda_value + (1 - in_VH) * VH_max) - log(VH_threshold)) / mda_waning'
+  dur_H:
+    desc: 'duration in H_MDA based on the MDA value if in corresponding MDA state, otherwise full state duration'
+    value: '(log(in_H * mda_value + (1 - in_H) * VH_threshold) - log(H_threshold)) / mda_waning'
+  dur_M:
+    desc: 'duration in M_MDA based on the MDA value if in corresponding MDA state, otherwise full state duration'
+    value: '(log(in_M * mda_value + (1 - in_M) * H_threshold) - log(M_threshold)) / mda_waning'
+  in_VH:
+    desc: '1 if mda_value above VH_threshold, 0 otherwise'
+    value: 'float(mda_value >= VH_threshold)'
+  in_H:
+    desc: '1 if mda_value between VH_threshold and H_threshold, 0 otherwise'
+    value: 'float(AND(mda_value >= H_threshold, mda_value < VH_threshold))'
+  in_M:
+    desc: '1 if mda_value between H_threshold and M_threshold, 0 otherwise'
+    value: 'float(AND(mda_value >= M_threshold, mda_value < H_threshold))'
+  in_L:
+    desc: '1 if mda_value below M_threshold, 0 otherwise'
+    value: 'float(mda_value < M_threshold)'
+  min_initial_mda:
+    desc: 'minimum initial MDA values for tests'
+    value: 0.1
+  max_initial_mda:
+    desc: 'maximum initial MDA values for tests'
+    value: 3.0
+  avg_initial_mda:
+    desc: 'average initial MDA values'
+    value: '(min_initial_mda + max_initial_mda) / 2'
+  sd_initial_mda:
+    desc: 'standard deviation in initial MDA values (assuming max - min covers 6 sd)'
+    value: '(max_initial_mda - min_initial_mda) / 6'
+  sample_initial_mda:
+    desc: 'samples values for initial mda in a normal distribution (truncated in 0)'
+    value: 'MAX(0, random_normal(avg_initial_mda, sd_initial_mda))'
+
+  age:
+    desc: 'age of animals'
+    value: 'time - birth_date'
+
+  #--------------------------------
+  # AVERAGE DAILY WEIGHT GAIN
+  #--------------------------------
+  default_initial_weight:
+    desc: 'initial weight for newborn piglets (kg)'
+    value: 1.38
+  reduction_adwg_PCV2SI_nursery:
+    desc: 'average reduction in kg of the ADWG in case of subclinical infection in pigs in nursery (assumed)'
+    value: 0.02
+  reduction_adwg_PCV2SI_finishing:
+    desc: 'average reduction in kg of the ADWG in case of subclinical infection in pigs during finishing (assumed)'
+    value: 0.04
+  reduction_adwg_PCV2SI:
+    desc: 'reduction factor in the average daily weight gain in case of subclinical infection in piglets and pigs, depending on the physiological stage'
+    value: 'is_Nursery * reduction_adwg_PCV2SI_nursery * dur_nursery / dur_PCV2SI +
+            is_Finishing * reduction_adwg_PCV2SI_finishing * dur_finishing / dur_PCV2SI '
+  reduction_adwg_PCV2SD_nursery:
+    desc: 'average reduction in kg of the ADWG in case of systemic disease in pigs in nursery (assumed)'
+    value: 0.04
+  reduction_adwg_PCV2SD_finishing:
+    desc: 'average reduction in kg of the ADWG in case of systemic disease in pigs during finishing (assumed)'
+    value: 0.08
+  reduction_adwg_PCV2SD:
+    desc: 'reduction factor in the average daily weight gain in case of systemic disease in piglets and pigs, depending on the physiological stage'
+    value: 'is_Nursery * reduction_adwg_PCV2SD_nursery * dur_nursery / avg_dur_PCV2SD +
+            is_Finishing * reduction_adwg_PCV2SD_finishing * dur_finishing / avg_dur_PCV2SD '
+  gompertz_A:
+    desc: 'coefficient of the Gompertz growth curve which defines the asymptotic weight, fitted on the following weights: W0 = A * exp(-B), W28 = 5.8kg, W73 = 18kg, W212 = 118kg '
+    value: 212
+  gompertz_k:
+    desc: 'coefficient of the Gompertz growth curve which defines the initial growth, fitted on the following weights: W0 = A * exp(-B), W28 = 5.8kg, W73 = 18kg, W212 = 118kg '
+    value: 0.01025
+  average_daily_weight_gain:
+    desc: 'average daily weight gain assuming 1) a Gompertz curve with parameter B calculated individually from the initial weight, 2) a reduction factor depending on the infection'
+    value: 'gompertz_k * weight * log(gompertz_A / weight) * (1 - is_PCV2SI * reduction_adwg_PCV2SI - is_PCV2SD * reduction_adwg_PCV2SD)'
+
+statevars:
+  affected:
+    desc: '1 if the animal got infected at least once, 0 otherwise'
+  affected_SD:
+    desc: '1 if the animal got infected at least once with the systemic disease, 0 otherwise'
+  affected_SI:
+    desc: '1 if the animal got infected at least once with the subclinical infection, 0 otherwise'
+  vaccinated:
+    desc: '1 if the animal got vaccinated at least once, 0 otherwise'
+  gompertz_B:
+    desc: 'coefficient of the Gompertz growth to be applied to each piglet based on its initial weight'
+  cum_incidence_SD:
+    desc: 'cumulated incidence for SD'
+  cum_incidence_SI:
+    desc: 'cumulated incidence for SI'  
+  cum_dead:
+    desc: 'cumulated number of piglets/pigs that died from natural mortality'
+  cum_dead_SD:
+    desc: 'cumulated number of piglets/pigs that died from SD'
+
+
+#  _____           _        _
+# |  __ \         | |      | |
+# | |__) | __ ___ | |_ ___ | |_ _   _ _ __   ___  ___
+# |  ___/ '__/ _ \| __/ _ \| __| | | | '_ \ / _ \/ __|
+# | |   | | | (_) | || (_) | |_| |_| | |_) |  __/\__ \
+# |_|   |_|  \___/ \__\___/ \__|\__, | .__/ \___||___/
+#                                __/ | |
+#                               |___/|_|
+
+# PROTOTYPES DESCRIBE TYPICAL REPRESENTENTS FOR A LEVEL
+prototypes:
+  batch:
+    - default_batch:
+        desc: 'default prototype for a batch'
+        total_nb_stillborn: 0
+        total_nb_mummified: 0
+        total_born_alive: 0
+        date_next_quarantine: 0
+        cum_incidence_SD: 0
+        cum_incidence_SI: 0
+        cum_dead: 0
+        cum_dead_SD: 0
+  pigs:
+    - default_animal:
+        desc: 'default initial values'
+        piglet_mda_value: 0
+        begin_with:
+          - dead: 0
+          - birth_date: time
+          - mda_value: 'sample_initial_mda'
+          - MDA: 'random(in_VH, in_H, in_M, in_L)'
+          - weight: default_initial_weight
+          - gompertz_B: 'log(gompertz_A / weight)'
+        PCV2: S
+        life_cycle: default
+        age_group: default
+        vaccination_PCV2: Non_IMM
+        affected: 0
+        affected_SD: 0
+        affected_SI: 0
+        vaccinated: 0
+
+    - not_vaccinated:
+        desc: 'not vaccinated piglets'
+        vaccination_PCV2: Non_IMM
+        PCV2: S
+        life_cycle: Suckling
+        age_group: Piglet
+        piglet_mda_value: 0
+        begin_with:
+          - birth_date: time
+          - mda_value: 'sample_initial_mda'
+          - MDA: 'random(in_VH, in_H, in_M, in_L)'
+          - weight: default_initial_weight
+          - gompertz_B: 'log(gompertz_A / weight)'
+        affected: 0
+        affected_SD: 0
+        affected_SI: 0
+        vaccinated: 0
+
+    - not_vaccinated_SI:
+        desc: 'not vaccinated piglets'
+        vaccination_PCV2: Non_IMM
+        PCV2: E
+        life_cycle: Suckling
+        age_group: Piglet
+        piglet_mda_value: 0
+        begin_with:
+          - birth_date: time
+          - mda_value: 'sample_initial_mda'
+          - MDA: 'random(in_VH, in_H, in_M, in_L)'
+          - weight: default_initial_weight
+          - gompertz_B: 'log(gompertz_A / weight)'
+        affected: 0
+        affected_SD: 0
+        affected_SI: 0
+        vaccinated: 0
+    - pig:
+        desc: 'animal becoming adult'
+        age_group: Pig
+
+    - healthy:
+        desc: 'healthy pigs'
+        PCV2: S
+        age_group: default
+    - infected:
+        desc: 'infected pigs'
+        PCV2: E
+        age_group: default
+    - infectious:
+        desc: 'infectious pigs with PCV2SD'
+        PCV2: PCV2SD
+        age_group: default
+    - infectious:
+        desc: 'infectious pigs with PCV2SI'
+        PCV2: PCV2SI
+        age_group: default
+
+    - healthy_newborn:
+        desc: 'healthy newborn piglets'
+        PCV2: S
+        vaccination_PCV2: Non_IMM
+        age_group: Piglet
+        life_cycle: Suckling
+        litter_size: 0
+        affected: 0
+        affected_SD: 0
+        affected_SI: 0
+        vaccinated: 0
+        begin_with:
+          - birth_date: time
+          - mda_value: 'piglet_mda_value'
+          - MDA: 'random(in_VH, in_H, in_M, in_L)'
+          - weight: default_initial_weight
+          - gompertz_B: 'log(gompertz_A / weight)'
+ 
+    - adjust_mda:
+        desc: 'prototype used to adjust MDA state according to MDA value'
+        MDA: 'random(in_VH, in_H, in_M, in_L)'
+
+#  _____       _ _   _       _
+# |_   _|     (_) | (_)     | |
+#   | |  _ __  _| |_ _  __ _| |
+#   | | | '_ \| | __| |/ _` | |
+#  _| |_| | | | | |_| | (_| | |
+# |_____|_| |_|_|\__|_|\__,_|_|
+
+#   _____                _ _ _   _
+#  / ____|              | (_) | (_)
+# | |     ___  _ __   __| |_| |_ _  ___  _ __  ___
+# | |    / _ \| '_ \ / _` | | __| |/ _ \| '_ \/ __|
+# | |___| (_) | | | | (_| | | |_| | (_) | | | \__ \
+#  \_____\___/|_| |_|\__,_|_|\__|_|\___/|_| |_|___/
+
+# INITIAL CONDITIONS FOR THE SIMULATION
+# Initial conditions describe the amount of sub-populations, identified by prototypes
+initial_conditions:
+  batch:
+    - prototype: not_vaccinated
+      amount: 'initial_batch_size * (1 - initial_prevalence_PCV2)'
+    - prototype: not_vaccinated_SI
+      amount: 'initial_batch_size * initial_prevalence_PCV2'
+
+
+#   ____        _               _
+#  / __ \      | |             | |
+# | |  | |_   _| |_ _ __  _   _| |_ ___
+# | |  | | | | | __| '_ \| | | | __/ __|
+# | |__| | |_| | |_| |_) | |_| | |_\__ \
+#  \____/ \__,_|\__| .__/ \__,_|\__|___/
+#                  | |
+#                  |_|
+
+# TYPE AND PERIODICITY OF OUTPUTS
+# The amount of individuals in each state is automatically recorded
+# for all state machines each time step during the simulation.
+# Additional variables (e.g. expressions defined in the 'parameters'
+# section) can be specified below (as 'extra_vars').
+outputs:
+  type: csv
+  batch:
+    period: 1
+    extra_vars:
+      - force_of_infection_Suckling
+      - force_of_infection_Nursery
+      - percentage_prevalence
+      - total_batch
+      - percentage_prevalence_pigs
+      - percentage_prevalence_piglets
+      - total_Piglet_Non_IMM
+      - total_Piglet_OOI
+      - mean_adwg
+      - mean_weight_Suckling
+      - mean_weight_Nursery
+      - mean_weight_Finishing
+      - cum_incidence_SD
+      - cum_incidence_SI
+      - cum_dead
+      - cum_dead_SD
+
+...
